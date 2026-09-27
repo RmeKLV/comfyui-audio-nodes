@@ -1,0 +1,7 @@
+# Extra dependencies for the YuE2 tools nodes (yue2_tools.py). Not needed for the HF-blend nodes.
+demucs            # Stem Separate (htdemucs_ft / htdemucs_6s weights download on first use)
+faster-whisper    # Lyric Accuracy Score (runs on CPU in a subprocess)
+jiwer             # word error rate
+pyloudnorm        # Stem Remix + Master loudness measurement
+scipy             # limiter
+torchaudio
