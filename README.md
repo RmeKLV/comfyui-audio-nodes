@@ -61,9 +61,47 @@ Load Audio Batch ──> (your upscaler) ──> Auto Instrument Blend ──> H
 Run `HF Artifact Repair` in detect-only mode first if you want to see how bad a file actually is
 before committing to a repair pass.
 
+## YuE2 tools
+
+Post-processing for songs made with **YuE2** (ComfyUI core ≥ v0.36.0), designed to sit at
+the end of a YuE2 graph: decode → stems → score → optional clean-up → remix + master → save.
+Category **audio/yue2 tools**. The workflows that use them live in
+[comfyui-workflows](https://github.com/RmeKLV/comfyui-workflows).
+
+| Node | What it does |
+|---|---|
+| **Stem Separate (Demucs)** | vocals / drums / bass / other (+ guitar / piano with `htdemucs_6s`), an `instrumental` sum, and a **residual** (input minus all stems). Stems come back at the input sample rate, not Demucs' native 44.1 kHz. |
+| **Lyric Accuracy Score (Whisper)** | transcribes the vocal stem and scores it against the lyrics (1 − WER). Tags the filename with the score and appends every run to `output/audio/yue2_scores.csv`, so a batch of takes sorts by quality. |
+| **Enhance Stems (optional)** | `off` or `clean vocal`: ClearVoice MossFormer2 SE on the vocal, with its effect transferred as a mask onto L/R so the stereo image survives (ClearVoice itself outputs mono). Needs [FL ClearVoice](https://github.com/filliptm/ComfyUI_FL-ClearVoice). |
+| **Stem Remix + Master** | per-stem gain, then loudness normalisation (−14 / −11 / −9 LUFS or off) with a 4×-oversampled true-peak ceiling and a lookahead limiter. Fades the ending only if the song stops loud. |
+| **Save Stems + Quality Report** | one folder per take; per-stem level / peak / clipping / abrupt-ending report. Anything peaking above 0 dBFS is written as 32-bit float WAV instead of FLAC so it cannot clip. |
+
+What was measured to get here (RX 7900 XTX, ROCm, fixed seeds):
+
+- **The HF-restoration chain above does not suit YuE2.** YuE2 output is already full-band
+  (content to ~21.5 kHz) and mastered (≈ −13 LUFS). Run through AudioSR + Auto Instrument Blend,
+  `HF Artifact Repair` flagged **42–67 %** of frames as severe, against 15–32 % on the untouched
+  stems and 0.7 % on the mix. ClearVoice SR took 19.5 min on a 2-minute vocal for no measurable
+  change. Only ClearVoice **SE** helped: instrument bleed in the gaps between vocal lines −8.6 dB,
+  singing −0.2 dB. That is why Enhance Stems offers nothing else.
+- **Remix is lossless:** all gains at 0 dB with the residual connected reproduces the mix to
+  −91 dB (below one 16-bit LSB). Leave the residual unconnected and you lose whatever Demucs
+  could not assign.
+- **Raw YuE2 decodes can exceed 0 dBFS** (peaks of 1.17 seen). Use the master.
+- **Whisper needs `vad_filter=False` on songs** — Silero VAD treats singing over music as
+  non-speech (4 of 86 words heard with it, 85 without). It runs in a subprocess because
+  ctranslate2's OpenMP runtime collides with torch's (OMP Error #15) and would take ComfyUI down.
+- **Do not use `pedalboard.Limiter` as a ceiling**: it applies make-up gain (+2.4 dB measured).
+- The lyric score measures intelligibility, not musicality. It reliably catches the common
+  failure — a take that slurs or skips a verse — but listening still picks the winner.
+
 ## Requirements
 
-`numpy`, `torch`, `soundfile` — all of which a working ComfyUI install already has.
+HF-blend and batch nodes: `numpy`, `torch`, `soundfile` — all of which a working ComfyUI install
+already has.
+
+YuE2 tools additionally: `pip install -r requirements-yue2.txt` (demucs, faster-whisper, jiwer,
+pyloudnorm). If they are missing, only the node that needs them fails; the rest load normally.
 
 ## Licence
 
